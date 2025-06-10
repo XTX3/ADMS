@@ -16,11 +16,11 @@
     th,td{border:1px solid #999;padding:.5rem;text-align:center}
     .stats-box{background:#fff;border:1px solid #ccc;border-radius:8px;padding:1rem;margin:1rem 0}
     .message{color:#d00;margin:.2rem 0;font-size:.9rem}
-    .edit-btn{cursor:pointer;color:blue}
   </style>
 </head>
 <body>
   <header><h1>نظام جرد الهواتف</h1></header>
+
   <nav>
     <button onclick="showSection('add')">📦 إضافة للمخزن</button>
     <button onclick="showSection('sell')">💰 بيع جهاز</button>
@@ -35,7 +35,7 @@
     <input id="addRam"      placeholder="الرام (مثلاً: 4GB)">
     <input id="addStorage"  placeholder="الذاكرة (مثلاً: 128GB)">
     <input id="addQty" type="number" placeholder="الكمية">
-    <button id="addBtn" onclick="addPhone()">➕ إضافة</button>
+    <button onclick="addPhone()">➕ إضافة</button>
 
     <h3>📋 الأجهزة في المخزن</h3>
     <table id="stockTable">
@@ -44,73 +44,294 @@
     </table>
   </section>
 
-  <!-- باقي الأقسام كما هي تمامًا -->
+  <!-- قسم البيع -->
+  <section id="sell">
+    <h2>بيع هاتف</h2>
+
+    <input list="deviceSuggestions" id="sellName" placeholder="اسم الشركة"
+           oninput="fillDetailsFromSuggestion()">
+    <datalist id="deviceSuggestions"></datalist>
+
+    <input id="sellType"     placeholder="النوع">
+    <input id="sellRam"      placeholder="الرام">
+    <input id="sellStorage"  placeholder="الذاكرة">
+    <input id="sellQty" type="number" placeholder="الكمية" oninput="toggleSellBtn()">
+
+    <span id="sellMsg" class="message"></span>
+
+    <button id="sellBtn" onclick="sellBtnHandler()" disabled>💳 بيع</button>
+    <button onclick="clearSellForm()">🧹 مسح الحقول</button>
+
+    <h3>📄 الأجهزة المباعة</h3>
+    <table id="salesTable">
+      <thead><tr><th>الشركة</th><th>النوع</th><th>الرام</th><th>الذاكرة</th><th>الكمية المباعة</th><th>تعديل</th><th>حذف</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- قسم الإحصائيات -->
+  <section id="stats">
+    <h2>الإحصائيات</h2>
+    <div class="stats-box">
+      <p><strong>📦 عدد أنواع الأجهزة في المخزن:</strong> <span id="totalStock">0</span></p>
+      <p><strong>💰 عدد الأجهزة المباعة:</strong> <span id="totalSold">0</span></p>
+      <p><strong>📈 إجمالي الكمية المتوفرة:</strong> <span id="stockQty">0</span></p>
+    </div>
+  </section>
 
   <script>
     let storage = JSON.parse(localStorage.getItem("phones")) || [];
     let sales   = JSON.parse(localStorage.getItem("sales"))  || [];
 
-    let editIndex = -1; // لتعديل جهاز موجود
+    let editIndex = null;          // تعديل جهاز في المخزن
+    let editSaleIndex = null;      // تعديل جهاز في المبيعات
 
-    function addPhone() {
-      const name = addName.value.trim(), type = addType.value.trim(),
-            ram = addRam.value.trim(), storageVal = addStorage.value.trim(),
-            qty = parseInt(addQty.value.trim());
-
-      if (!name || !type || !ram || !storageVal || isNaN(qty) || qty <= 0) {
-        alert("يرجى ملء كل الحقول"); return;
-      }
-
-      if (editIndex >= 0) {
-        // تعديل
-        storage[editIndex] = { name, type, ram, storage: storageVal, qty };
-        editIndex = -1;
-        addBtn.textContent = "➕ إضافة";
-      } else {
-        // إضافة جديد أو دمج مع الموجود
-        const item = storage.find(p => p.name === name && p.type === type && p.ram === ram && p.storage === storageVal);
-        if (item) item.qty += qty;
-        else storage.push({ name, type, ram, storage: storageVal, qty });
-      }
-
-      saveData(); renderStockTable();
-      addName.value = addType.value = addRam.value = addStorage.value = addQty.value = "";
+    function showSection(id){
+      document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      if(id==="stats") updateStats();
+      if(id==="add")   renderStockTable();
+      if(id==="sell")  { renderSalesTable(); updateSuggestions(); clearSellForm(); }
     }
 
-    function editPhone(index) {
-      const p = storage[index];
+    function saveData(){
+      localStorage.setItem("phones", JSON.stringify(storage));
+      localStorage.setItem("sales",  JSON.stringify(sales));
+    }
+
+    // إضافة جهاز أو حفظ تعديل في المخزن
+    function addPhone(){
+      if(editIndex !== null){
+        saveEditedPhone();
+        return;
+      }
+      const name   = addName.value.trim(),
+            type   = addType.value.trim(),
+            ram    = addRam.value.trim(),
+            stor   = addStorage.value.trim(),
+            qty    = parseInt(addQty.value.trim());
+
+      if(!name||!type||!ram||!stor||isNaN(qty)||qty<=0){ alert("يرجى ملء كل الحقول"); return;}
+
+      const item = storage.find(p=>p.name===name&&p.type===type&&p.ram===ram&&p.storage===stor);
+      item ? item.qty+=qty : storage.push({name,type,ram,storage:stor,qty});
+      saveData(); renderStockTable(); alert("تمت الإضافة");
+      addName.value=addType.value=addRam.value=addStorage.value=addQty.value="";
+    }
+
+    // تعبئة بيانات البيع عند اختيار من الاقتراحات
+    function fillDetailsFromSuggestion(){
+      const txt = sellName.value;
+      const p   = storage.find(d => (`${d.name} - ${d.type} - ${d.ram} - ${d.storage}`)===txt);
+      if(p){
+        sellName.value=p.name; sellType.value=p.type; sellRam.value=p.ram; sellStorage.value=p.storage;
+        sellMsg.textContent=""; toggleSellBtn(); return;
+      }
+      sellType.value=sellRam.value=sellStorage.value="";
+      toggleSellBtn();
+      if(txt && !storage.some(d => d.name.toLowerCase()===txt.toLowerCase())){
+        sellMsg.textContent="الجهاز غير موجود في المخزن"; sellBtn.disabled=true;
+      }else sellMsg.textContent="";
+    }
+
+    // تفعيل زر البيع عند صلاحية البيانات
+    function toggleSellBtn(){
+      const qty = parseInt(sellQty.value);
+      const valid =
+        sellName.value && sellType.value && sellRam.value && sellStorage.value &&
+        !isNaN(qty) && qty>0 &&
+        storage.some(p=> p.name===sellName.value && p.type===sellType.value &&
+                         p.ram===sellRam.value && p.storage===sellStorage.value && p.qty>=qty);
+      sellBtn.disabled = !valid;
+    }
+
+    // تنفيذ عملية البيع
+    function sellPhone(){
+      const name=sellName.value.trim(), type=sellType.value.trim(),
+            ram=sellRam.value.trim(),   stor=sellStorage.value.trim(),
+            qty=parseInt(sellQty.value.trim());
+
+      const idx = storage.findIndex(p=>p.name===name&&p.type===type&&p.ram===ram&&p.storage===stor);
+      if(idx===-1||storage[idx].qty<qty){ alert("الكمية غير متوفرة"); return;}
+
+      storage[idx].qty-=qty; if(storage[idx].qty===0) storage.splice(idx,1);
+      sales.push({name,type,ram,storage:stor,qty});
+      saveData(); renderStockTable(); renderSalesTable(); updateStats(); alert("تم البيع");
+      clearSellForm();
+    }
+
+    // مسح بيانات نموذج البيع
+    function clearSellForm(){
+      sellName.value=sellType.value=sellRam.value=sellStorage.value=sellQty.value="";
+      sellMsg.textContent=""; sellBtn.disabled=true;
+      editSaleIndex = null;
+      document.getElementById('sellBtn').textContent = "💳 بيع";
+    }
+
+    // عرض بيانات المخزن في الجدول مع زر تعديل
+    function renderStockTable(){
+      const tbody = stockTable.querySelector("tbody"); tbody.innerHTML="";
+      storage.forEach((p,i)=>{
+        tbody.insertAdjacentHTML("beforeend",
+          `<tr>
+            <td>${p.name}</td><td>${p.type}</td><td>${p.ram}</td><td>${p.storage}</td><td>${p.qty}</td>
+            <td><button onclick="editPhone(${i})">تعديل</button></td>
+          </tr>`);
+      });
+      updateSuggestions();
+    }
+
+    // عرض بيانات المبيعات مع زري تعديل وحذف
+    function renderSalesTable(){
+      const tbody = salesTable.querySelector("tbody"); tbody.innerHTML="";
+      sales.forEach((s,i)=>{
+        tbody.insertAdjacentHTML("beforeend",
+          `<tr>
+            <td>${s.name}</td><td>${s.type}</td><td>${s.ram}</td><td>${s.storage}</td><td>${s.qty}</td>
+            <td><button onclick="editSale(${i})">تعديل</button></td>
+            <td><button onclick="deleteSale(${i})">حذف</button></td>
+          </tr>`);
+      });
+    }
+
+    // تحديث قائمة الاقتراحات في البيع
+    function updateSuggestions(){
+      const dlist = deviceSuggestions;
+      dlist.innerHTML = "";
+      storage.forEach(p=>{
+        let val = `${p.name} - ${p.type} - ${p.ram} - ${p.storage}`;
+        dlist.insertAdjacentHTML("beforeend",`<option value="${val}">`);
+      });
+    }
+
+    // تعديل بيانات جهاز في المخزن
+    function editPhone(i){
+      editIndex = i;
+      const p = storage[i];
       addName.value = p.name;
       addType.value = p.type;
       addRam.value = p.ram;
       addStorage.value = p.storage;
       addQty.value = p.qty;
-      addBtn.textContent = "💾 حفظ التعديل";
-      editIndex = index;
-      showSection('add');
+      showSection("add");
     }
 
-    function renderStockTable() {
-      const tbody = stockTable.querySelector("tbody");
-      tbody.innerHTML = "";
-      storage.forEach((p, i) => {
-        tbody.insertAdjacentHTML("beforeend",
-          `<tr><td>${p.name}</td><td>${p.type}</td><td>${p.ram}</td><td>${p.storage}</td><td>${p.qty}</td><td><span class="edit-btn" onclick="editPhone(${i})">✏️ تعديل</span></td></tr>`
-        );
-      });
+    // حفظ التعديل في المخزن
+    function saveEditedPhone(){
+      const name   = addName.value.trim(),
+            type   = addType.value.trim(),
+            ram    = addRam.value.trim(),
+            stor   = addStorage.value.trim(),
+            qty    = parseInt(addQty.value.trim());
+
+      if(!name||!type||!ram||!stor||isNaN(qty)||qty<=0){ alert("يرجى ملء كل الحقول بشكل صحيح"); return;}
+
+      // تحديث
+      storage[editIndex] = {name,type,ram,storage:stor,qty};
+      editIndex = null;
+      saveData();
+      renderStockTable();
+      alert("تم حفظ التعديل");
+      addName.value=addType.value=addRam.value=addStorage.value=addQty.value="";
     }
 
-    function showSection(id) {
-      document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
-      document.getElementById(id).classList.add("active");
-      if (id === "add") renderStockTable();
+    // تعديل بيانات سجل بيع
+    function editSale(i){
+      editSaleIndex = i;
+      const s = sales[i];
+      sellName.value = s.name;
+      sellType.value = s.type;
+      sellRam.value = s.ram;
+      sellStorage.value = s.storage;
+      sellQty.value = s.qty;
+      sellMsg.textContent="";
+      sellBtn.textContent = "💾 حفظ التعديل";
+      showSection("sell");
+      toggleSellBtn();
     }
 
-    function saveData() {
-      localStorage.setItem("phones", JSON.stringify(storage));
-      localStorage.setItem("sales", JSON.stringify(sales));
+    // حفظ تعديل سجل البيع
+    function saveEditedSale(){
+      const name = sellName.value.trim(),
+            type = sellType.value.trim(),
+            ram = sellRam.value.trim(),
+            stor = sellStorage.value.trim(),
+            qty = parseInt(sellQty.value.trim());
+
+      if(!name||!type||!ram||!stor||isNaN(qty)||qty<=0){
+        alert("يرجى ملء كل الحقول بشكل صحيح"); 
+        return;
+      }
+
+      const oldSale = sales[editSaleIndex];
+      const oldQty = oldSale.qty;
+
+      // إعادة الكمية القديمة للمخزن أولاً
+      let oldStorageIndex = storage.findIndex(p=>p.name===oldSale.name&&p.type===oldSale.type&&p.ram===oldSale.ram&&p.storage===oldSale.storage);
+      if(oldStorageIndex !== -1){
+        storage[oldStorageIndex].qty += oldQty;
+      }else{
+        storage.push({name:oldSale.name,type:oldSale.type,ram:oldSale.ram,storage:oldSale.storage,qty:oldQty});
+      }
+
+      // التحقق من توفر الكمية الجديدة
+      let newStorageIndex = storage.findIndex(p=>p.name===name&&p.type===type&&p.ram===ram&&p.storage===stor);
+      if(newStorageIndex === -1 || storage[newStorageIndex].qty < qty){
+        alert("الكمية غير متوفرة");
+        return;
+      }
+
+      // خصم الكمية الجديدة
+      storage[newStorageIndex].qty -= qty;
+      if(storage[newStorageIndex].qty === 0) storage.splice(newStorageIndex,1);
+
+      // تحديث السجل
+      sales[editSaleIndex] = {name,type,ram,storage:stor,qty};
+
+      editSaleIndex = null;
+      saveData();
+      renderStockTable();
+      renderSalesTable();
+      updateStats();
+      clearSellForm();
+      alert("تم حفظ التعديل في المبيعات");
     }
 
+    // حذف سجل بيع واسترجاع الكمية للمخزن
+    function deleteSale(index){
+      const s = sales[index];
+      let idx = storage.findIndex(p=>p.name===s.name&&p.type===s.type&&p.ram===s.ram&&p.storage===s.storage);
+      if(idx !== -1){
+        storage[idx].qty += s.qty;
+      }else{
+        storage.push({name:s.name,type:s.type,ram:s.ram,storage:s.storage,qty:s.qty});
+      }
+      sales.splice(index,1);
+      saveData();
+      renderStockTable();
+      renderSalesTable();
+      updateStats();
+      alert("تم حذف سجل البيع واسترجاع الكمية للمخزن");
+    }
+
+    // زر البيع أو حفظ تعديل البيع
+    function sellBtnHandler(){
+      if(editSaleIndex !== null) saveEditedSale();
+      else sellPhone();
+    }
+
+    // تحديث الإحصائيات
+    function updateStats(){
+      totalStock.textContent = storage.length;
+      totalSold.textContent  = sales.reduce((a,c)=>a+c.qty,0);
+      stockQty.textContent   = storage.reduce((a,c)=>a+c.qty,0);
+    }
+
+    // بدء التشغيل
     renderStockTable();
+    renderSalesTable();
+    updateStats();
+
   </script>
 </body>
 </html>
