@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>نظام جرد الهواتف</title>
+  <style>
+    body{font-family:Arial, sans-serif;background:#f7f7f7;margin:0}
+    header{background:#007bff;color:#fff;padding:1rem;text-align:center}
+    nav{display:flex;justify-content:center;gap:1rem;background:#e0e0e0;padding:.5rem}
+    nav button{padding:.5rem 1rem;border:0;border-radius:5px;background:#007bff;color:#fff;cursor:pointer}
+    section{display:none;padding:1rem} section.active{display:block}
+    input,button{margin:.3rem 0;padding:.5rem;width:100%;box-sizing:border-box}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;margin-top:1rem;background:#fff}
+    th,td{border:1px solid #999;padding:.5rem;text-align:center}
+    .stats-box{background:#fff;border:1px solid #ccc;border-radius:8px;padding:1rem;margin:1rem 0}
+    .message{color:#d00;margin:.2rem 0;font-size:.9rem}
+    .edit-btn{cursor:pointer;color:blue}
+  </style>
+</head>
+<body>
+  <header><h1>نظام جرد الهواتف</h1></header>
+  <nav>
+    <button onclick="showSection('add')">📦 إضافة للمخزن</button>
+    <button onclick="showSection('sell')">💰 بيع جهاز</button>
+    <button onclick="showSection('stats')">📊 الإحصائيات</button>
+  </nav>
+
+  <!-- قسم الإضافة -->
+  <section id="add" class="active">
+    <h2>إضافة هاتف للمخزن</h2>
+    <input id="addName"     placeholder="اسم الشركة (مثلاً: Samsung)">
+    <input id="addType"     placeholder="النوع (مثلاً: A14)">
+    <input id="addRam"      placeholder="الرام (مثلاً: 4GB)">
+    <input id="addStorage"  placeholder="الذاكرة (مثلاً: 128GB)">
+    <input id="addQty" type="number" placeholder="الكمية">
+    <button id="addBtn" onclick="addPhone()">➕ إضافة</button>
+
+    <h3>📋 الأجهزة في المخزن</h3>
+    <table id="stockTable">
+      <thead><tr><th>الشركة</th><th>النوع</th><th>الرام</th><th>الذاكرة</th><th>الكمية</th><th>تعديل</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- باقي الأقسام كما هي تمامًا -->
+
+  <script>
+    let storage = JSON.parse(localStorage.getItem("phones")) || [];
+    let sales   = JSON.parse(localStorage.getItem("sales"))  || [];
+
+    let editIndex = -1; // لتعديل جهاز موجود
+
+    function addPhone() {
+      const name = addName.value.trim(), type = addType.value.trim(),
+            ram = addRam.value.trim(), storageVal = addStorage.value.trim(),
+            qty = parseInt(addQty.value.trim());
+
+      if (!name || !type || !ram || !storageVal || isNaN(qty) || qty <= 0) {
+        alert("يرجى ملء كل الحقول"); return;
+      }
+
+      if (editIndex >= 0) {
+        // تعديل
+        storage[editIndex] = { name, type, ram, storage: storageVal, qty };
+        editIndex = -1;
+        addBtn.textContent = "➕ إضافة";
+      } else {
+        // إضافة جديد أو دمج مع الموجود
+        const item = storage.find(p => p.name === name && p.type === type && p.ram === ram && p.storage === storageVal);
+        if (item) item.qty += qty;
+        else storage.push({ name, type, ram, storage: storageVal, qty });
+      }
+
+      saveData(); renderStockTable();
+      addName.value = addType.value = addRam.value = addStorage.value = addQty.value = "";
+    }
+
+    function editPhone(index) {
+      const p = storage[index];
+      addName.value = p.name;
+      addType.value = p.type;
+      addRam.value = p.ram;
+      addStorage.value = p.storage;
+      addQty.value = p.qty;
+      addBtn.textContent = "💾 حفظ التعديل";
+      editIndex = index;
+      showSection('add');
+    }
+
+    function renderStockTable() {
+      const tbody = stockTable.querySelector("tbody");
+      tbody.innerHTML = "";
+      storage.forEach((p, i) => {
+        tbody.insertAdjacentHTML("beforeend",
+          `<tr><td>${p.name}</td><td>${p.type}</td><td>${p.ram}</td><td>${p.storage}</td><td>${p.qty}</td><td><span class="edit-btn" onclick="editPhone(${i})">✏️ تعديل</span></td></tr>`
+        );
+      });
+    }
+
+    function showSection(id) {
+      document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      if (id === "add") renderStockTable();
+    }
+
+    function saveData() {
+      localStorage.setItem("phones", JSON.stringify(storage));
+      localStorage.setItem("sales", JSON.stringify(sales));
+    }
+
+    renderStockTable();
+  </script>
+</body>
+</html>
